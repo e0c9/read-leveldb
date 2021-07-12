@@ -78,6 +78,7 @@ class LEVELDB_EXPORT Cache {
   // If the cache contains entry for key, erase it.  Note that the
   // underlying entry will be kept around until all existing handles
   // to it have been released.
+  // Handle 对应于 Map 中的 entry
   virtual void Erase(const Slice& key) = 0;
 
   // Return a new numeric id.  May be used by multiple clients who are
@@ -95,6 +96,7 @@ class LEVELDB_EXPORT Cache {
 
   // Return an estimate of the combined charges of all elements stored in the
   // cache.
+  // 预估容量
   virtual size_t TotalCharge() const = 0;
 
  private:
@@ -102,6 +104,7 @@ class LEVELDB_EXPORT Cache {
   void LRU_Append(Handle* e);
   void Unref(Handle* e);
 
+  // todo 这是干什么的？
   struct Rep;
   Rep* rep_;
 };

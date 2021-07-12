@@ -10,6 +10,7 @@
 
 namespace leveldb {
 
+// 在构造时获取锁，在析构时释放锁
 // Helper class that locks a mutex on construction and unlocks the mutex when
 // the destructor of the MutexLock object is invoked.
 //
@@ -23,7 +24,7 @@ namespace leveldb {
 class SCOPED_LOCKABLE MutexLock {
  public:
   explicit MutexLock(port::Mutex* mu) EXCLUSIVE_LOCK_FUNCTION(mu) : mu_(mu) {
-    this->mu_->Lock();
+    mu_->Lock();
   }
   ~MutexLock() UNLOCK_FUNCTION() { this->mu_->Unlock(); }
 

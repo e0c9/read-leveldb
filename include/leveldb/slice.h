@@ -6,6 +6,8 @@
 // storage and a size.  The user of a Slice must ensure that the slice
 // is not used after the corresponding external storage has been
 // deallocated.
+// 维护一个执政指向外部存储 以及 维护一个size大小
+// 使用者需要保证外部存储被释放时不再使用它
 //
 // Multiple threads can invoke const methods on a Slice without
 // external synchronization, but if any of the threads may call a
@@ -80,12 +82,13 @@ class LEVELDB_EXPORT Slice {
   //   >  0 iff "*this" >  "b"
   int compare(const Slice& b) const;
 
-  // Return true iff "x" is a prefix of "*this"
+  // Return true if "x" is a prefix of "*this"
   bool starts_with(const Slice& x) const {
     return ((size_ >= x.size_) && (memcmp(data_, x.data_, x.size_) == 0));
   }
 
  private:
+ // 指向常量char，不可以改变内部内容
   const char* data_;
   size_t size_;
 };

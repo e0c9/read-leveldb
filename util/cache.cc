@@ -40,17 +40,18 @@ namespace {
 
 // An entry is a variable length heap-allocated structure.  Entries
 // are kept in a circular doubly linked list ordered by access time.
+// doubly linked list 里面的元素
 struct LRUHandle {
   void* value;
   void (*deleter)(const Slice&, void* value);
-  LRUHandle* next_hash;
+  LRUHandle* next_hash; // 同一个hash桶下一个元素
   LRUHandle* next;
   LRUHandle* prev;
   size_t charge;  // TODO(opt): Only allow uint32_t?
   size_t key_length;
-  bool in_cache;     // Whether entry is in the cache.
-  uint32_t refs;     // References, including cache reference, if present.
-  uint32_t hash;     // Hash of key(); used for fast sharding and comparisons
+  bool in_cache;     // Whether entry is in the cache. 是否在cache中
+  uint32_t refs;     // References, including cache reference, if present. 引用计数、cache中 还是在使用中
+  uint32_t hash;     // Hash of key(); used for fast sharding and comparisons hash值用于快速shard 以及快速比较
   char key_data[1];  // Beginning of key
 
   Slice key() const {
@@ -164,6 +165,7 @@ class LRUCache {
   void Release(Cache::Handle* handle);
   void Erase(const Slice& key, uint32_t hash);
   void Prune();
+
   size_t TotalCharge() const {
     MutexLock l(&mutex_);
     return usage_;
@@ -186,12 +188,16 @@ class LRUCache {
   // Dummy head of LRU list.
   // lru.prev is newest entry, lru.next is oldest entry.
   // Entries have refs==1 and in_cache==true.
+  // lru.prev 指向最新的 entry， lru.nect 指向最旧的 entry
+  // entry refs为1，in_cache为true
   LRUHandle lru_ GUARDED_BY(mutex_);
 
   // Dummy head of in-use list.
   // Entries are in use by clients, and have refs >= 2 and in_cache==true.
+  // in_use 列表，entry正在被客户端使用，refs >= 2 并且 in_cache 为 true
   LRUHandle in_use_ GUARDED_BY(mutex_);
 
+  // hash 表，LRU实现的通用思路 hash表 + 链表
   HandleTable table_ GUARDED_BY(mutex_);
 };
 
@@ -199,12 +205,14 @@ LRUCache::LRUCache() : capacity_(0), usage_(0) {
   // Make empty circular linked lists.
   lru_.next = &lru_;
   lru_.prev = &lru_;
-  in_use_.next = &in_use_;
+  in_use_.next = &in_use_; // refs >= 2 正在被客户端使用
   in_use_.prev = &in_use_;
 }
 
 LRUCache::~LRUCache() {
+  // 还存在正在使用的 entry
   assert(in_use_.next == &in_use_);  // Error if caller has an unreleased handle
+  // 它是一个环状的链表
   for (LRUHandle* e = lru_.next; e != &lru_;) {
     LRUHandle* next = e->next;
     assert(e->in_cache);
@@ -244,6 +252,7 @@ void LRUCache::LRU_Remove(LRUHandle* e) {
 
 void LRUCache::LRU_Append(LRUHandle* list, LRUHandle* e) {
   // Make "e" newest entry by inserting just before *list
+  // 将entry 插入列表最前面
   e->next = list;
   e->prev = list->prev;
   e->prev->next = e;
@@ -254,11 +263,14 @@ Cache::Handle* LRUCache::Lookup(const Slice& key, uint32_t hash) {
   MutexLock l(&mutex_);
   LRUHandle* e = table_.Lookup(key, hash);
   if (e != nullptr) {
+    // 如果在 lru_ 链表中，则移动到 in_use_ 链表中
+    // 增加引用计数
     Ref(e);
   }
   return reinterpret_cast<Cache::Handle*>(e);
 }
 
+// 释放
 void LRUCache::Release(Cache::Handle* handle) {
   MutexLock l(&mutex_);
   Unref(reinterpret_cast<LRUHandle*>(handle));
@@ -270,6 +282,7 @@ Cache::Handle* LRUCache::Insert(const Slice& key, uint32_t hash, void* value,
                                                 void* value)) {
   MutexLock l(&mutex_);
 
+  // TODO malloc 的这个大小令人不懂 为啥需要加上 key.size()????
   LRUHandle* e =
       reinterpret_cast<LRUHandle*>(malloc(sizeof(LRUHandle) - 1 + key.size()));
   e->value = value;
@@ -289,8 +302,10 @@ Cache::Handle* LRUCache::Insert(const Slice& key, uint32_t hash, void* value,
     FinishErase(table_.Insert(e));
   } else {  // don't cache. (capacity_==0 is supported and turns off caching.)
     // next is read by key() in an assert, so it must be initialized
-    e->next = nullptr;
+    e->next = nullptr; // 这里后续需要理解 TODO 
   }
+
+  // 淘汰lru 最后面的元素
   while (usage_ > capacity_ && lru_.next != &lru_) {
     LRUHandle* old = lru_.next;
     assert(old->refs == 1);
@@ -321,6 +336,7 @@ void LRUCache::Erase(const Slice& key, uint32_t hash) {
   FinishErase(table_.Remove(key, hash));
 }
 
+// 可以把不是正在使用的 entry 清空，如果内存空间很紧张的时候
 void LRUCache::Prune() {
   MutexLock l(&mutex_);
   while (lru_.next != &lru_) {
@@ -334,10 +350,13 @@ void LRUCache::Prune() {
 }
 
 static const int kNumShardBits = 4;
+// 16个分片
 static const int kNumShards = 1 << kNumShardBits;
 
+// 分片的LRUCache 继承 Cache
 class ShardedLRUCache : public Cache {
  private:
+  // 每个分片的实现为LRUCache
   LRUCache shard_[kNumShards];
   port::Mutex id_mutex_;
   uint64_t last_id_;
@@ -346,45 +365,68 @@ class ShardedLRUCache : public Cache {
     return Hash(s.data(), s.size(), 0);
   }
 
+  // 剩下前 KnumShardBits 的bit位
   static uint32_t Shard(uint32_t hash) { return hash >> (32 - kNumShardBits); }
 
  public:
+  // explicit
   explicit ShardedLRUCache(size_t capacity) : last_id_(0) {
+    // 保证一定能容纳超过capactiy的entry
     const size_t per_shard = (capacity + (kNumShards - 1)) / kNumShards;
     for (int s = 0; s < kNumShards; s++) {
       shard_[s].SetCapacity(per_shard);
     }
   }
+
   ~ShardedLRUCache() override {}
+
+  // 插入数据
   Handle* Insert(const Slice& key, void* value, size_t charge,
                  void (*deleter)(const Slice& key, void* value)) override {
+    // 获取 hash 值
     const uint32_t hash = HashSlice(key);
+    //  调用分片的insert方法， Shard(hash)可以获取分片位置 
     return shard_[Shard(hash)].Insert(key, hash, value, charge, deleter);
   }
+
+  // 查找数据
   Handle* Lookup(const Slice& key) override {
     const uint32_t hash = HashSlice(key);
+    // 还带上了 hash 值？ 需要确认一下什么用途.....
     return shard_[Shard(hash)].Lookup(key, hash);
   }
+
+  // 释放
   void Release(Handle* handle) override {
+    // 强制转换
     LRUHandle* h = reinterpret_cast<LRUHandle*>(handle);
     shard_[Shard(h->hash)].Release(handle);
   }
+
+  // 销毁某个key
   void Erase(const Slice& key) override {
     const uint32_t hash = HashSlice(key);
     shard_[Shard(hash)].Erase(key, hash);
   }
+
+  // 根据 handle 获取 value
   void* Value(Handle* handle) override {
     return reinterpret_cast<LRUHandle*>(handle)->value;
   }
+
   uint64_t NewId() override {
     MutexLock l(&id_mutex_);
     return ++(last_id_);
   }
+
+  // 释放不在使用中的entry
   void Prune() override {
     for (int s = 0; s < kNumShards; s++) {
       shard_[s].Prune();
     }
   }
+
+  // 计算所有的 totalCharge
   size_t TotalCharge() const override {
     size_t total = 0;
     for (int s = 0; s < kNumShards; s++) {
@@ -396,6 +438,7 @@ class ShardedLRUCache : public Cache {
 
 }  // end anonymous namespace
 
+// Cache 内部实现为ShardedLRUCache 分片的 LRUCache
 Cache* NewLRUCache(size_t capacity) { return new ShardedLRUCache(capacity); }
 
 }  // namespace leveldb
