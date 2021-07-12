@@ -26,6 +26,7 @@
 
 namespace leveldb {
 
+// 通过指针避免拷贝数据，骚气啊，需要外部用户自己去释放内存。
 class LEVELDB_EXPORT Slice {
  public:
   // Create an empty slice.
@@ -69,7 +70,7 @@ class LEVELDB_EXPORT Slice {
   // Drop the first "n" bytes from this slice.
   void remove_prefix(size_t n) {
     assert(n <= size());
-    data_ += n;
+    data_ += n; //指针移动快啊
     size_ -= n;
   }
 

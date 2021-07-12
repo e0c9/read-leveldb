@@ -45,12 +45,15 @@ struct LEVELDB_EXPORT Options {
   // comparator provided to previous open calls on the same DB.
   const Comparator* comparator;
 
+  // 如果不存在DB则创建一个DB
   // If true, the database will be created if it is missing.
   bool create_if_missing = false;
 
+  // 存在db则抛出异常
   // If true, an error is raised if the database already exists.
   bool error_if_exists = false;
 
+  // 积极检查问题
   // If true, the implementation will do aggressive checking of the
   // data it is processing and will stop early if it detects any
   // errors.  This may have unforeseen ramifications: for example, a
@@ -97,6 +100,7 @@ struct LEVELDB_EXPORT Options {
   // block size specified here corresponds to uncompressed data.  The
   // actual size of the unit read from disk may be smaller if
   // compression is enabled.  This parameter can be changed dynamically.
+  // 4KB 为压缩的数据
   size_t block_size = 4 * 1024;
 
   // Number of keys between restart points for delta encoding of keys.
@@ -104,6 +108,7 @@ struct LEVELDB_EXPORT Options {
   // leave this parameter alone.
   int block_restart_interval = 16;
 
+  // 最大的问文件大小
   // Leveldb will write up to this amount of bytes to a file before
   // switching to a new one.
   // Most clients should leave this parameter alone.  However if your
@@ -112,13 +117,15 @@ struct LEVELDB_EXPORT Options {
   // compactions and hence longer latency/performance hiccups.
   // Another reason to increase this parameter might be when you are
   // initially populating a large database.
+  // 2Mb????
   size_t max_file_size = 2 * 1024 * 1024;
 
+  // 压缩算法选择
   // Compress blocks using the specified compression algorithm.  This
-  // parameter can be changed dynamically.
+  // parameter can be changed dynamically. 可以动态的改变
   //
   // Default: kSnappyCompression, which gives lightweight but fast
-  // compression.
+  // compression. 默认为snappy压缩算法
   //
   // Typical speeds of kSnappyCompression on an Intel(R) Core(TM)2 2.4GHz:
   //    ~200-500MB/s compression
@@ -136,6 +143,7 @@ struct LEVELDB_EXPORT Options {
   // Default: currently false, but may become true later.
   bool reuse_logs = false;
 
+  // 过滤策略用于减少磁盘访问
   // If non-null, use the specified filter policy to reduce disk reads.
   // Many applications will benefit from passing the result of
   // NewBloomFilterPolicy() here.
@@ -152,6 +160,7 @@ struct LEVELDB_EXPORT ReadOptions {
 
   // Should the data read for this iteration be cached in memory?
   // Callers may wish to set this field to false for bulk scans.
+  // 对于 bulk scan 希望关闭缓存
   bool fill_cache = true;
 
   // If "snapshot" is non-null, read as of the supplied snapshot
@@ -169,11 +178,13 @@ struct LEVELDB_EXPORT WriteOptions {
   // buffer cache (by calling WritableFile::Sync()) before the write
   // is considered complete.  If this flag is true, writes will be
   // slower.
+  // 强制刷新到磁盘，确保数据是完整的。write and fsync
   //
   // If this flag is false, and the machine crashes, some recent
   // writes may be lost.  Note that if it is just the process that
   // crashes (i.e., the machine does not reboot), no writes will be
   // lost even if sync==false.
+  // 如果只是进程crash，机器没有重启，没有写入会丢失
   //
   // In other words, a DB write with sync==false has similar
   // crash semantics as the "write()" system call.  A DB write
